@@ -192,11 +192,8 @@ void copy_redir_arg(char *redir_arg[], char *arguments_array[], int lower, int u
         redir_arg[k] = malloc(MAX_LINE / 2 + 1);
         strcpy(redir_arg[k], arguments_array[i]);
     }
-    /*
-       for (j = 0; j < MAX_LINE / 2 + 1; j++) {
-       redir_arg[j] = NULL;
-       }
-       */
+
+    redir_arg[k] = NULL;
 }
 
 void free_redir_arg(char *redir_arg[], int count)
