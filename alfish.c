@@ -7,8 +7,6 @@
 #include <unistd.h>
 
 #define MAX_LINE 80
-#define READ_END 0
-#define WRITE_END 1
 
 typedef enum { 
     PIPE, 
@@ -23,19 +21,19 @@ typedef enum {
 void print_help()
 {
     printf("alfish: the Allison L. Fitzgerald shell\n"
-    "><(((( >\n"
-    "usages:\n"
-    "\t * [command] [options] -- execute the command\n"
-    "\t * [command] [options] & -- execute the command in background\n"
-    "\t * [command1] [options] | [command2] [options] -- pipe command1 into command2\n"
-    "\t * [command] [options] > [file] -- redirect stdout of command to file\n"
-    "\t * [command] [options] 1> [file] -- redirect stdout of command to file\n"
-    "\t * [command] [options] 2> [file] -- redirect stderr of command to file\n"
-    "\t * [command] &> [file] -- redirect stdout and stderr to file\n"
-    "\t * [command] < [file] -- redirect stdin of file to command\n"
-    "\t * [command] >> [file] -- append stdout of command to file\n"
-    "\t * [command] 2>> [file] -- append stderr of command to file\n");
-            
+            "><(((( >\n"
+            "usages:\n"
+            "\t * [command] [options] -- execute the command\n"
+            "\t * [command] [options] & -- execute the command in background\n"
+            "\t * [command1] [options] | [command2] [options] -- pipe command1 into command2\n"
+            "\t * [command] [options] > [file] -- redirect stdout of command to file\n"
+            "\t * [command] [options] 1> [file] -- redirect stdout of command to file\n"
+            "\t * [command] [options] 2> [file] -- redirect stderr of command to file\n"
+            "\t * [command] &> [file] -- redirect stdout and stderr to file\n"
+            "\t * [command] < [file] -- redirect stdin of file to command\n"
+            "\t * [command] >> [file] -- append stdout of command to file\n"
+            "\t * [command] 2>> [file] -- append stderr of command to file\n");
+
 }
 
 Redirect get_redirect_type(char *arg)
@@ -101,85 +99,113 @@ void execute_command(char *arg_array[], int arg_count)
         if (bg_flag) {
             sid = setsid();
             close(fileno(stdout));
-            execvp(arg_array[0], arg_array);
-        } else {
-            execvp(arg_array[0], arg_array);
         }
+
+        execvp(arg_array[0], arg_array);
+    }
+}
+
+void pipe_command(char *arg1[], char *arg2[])
+{
+    pid_t pid1, pid2;
+    int pipe_fd[2];
+    int status;
+
+    if (pipe(pipe_fd)) {
+        fprintf(stderr, "Error creating the pipe\n");
+        exit(1);  
+    }
+
+    pid1 = fork();
+
+    if (pid1 < 0) {
+        fprintf(stderr, "Error creating fork1\n");
+        exit(1);
+    } else if (pid1 > 0) {
+        pid2 = fork();
+
+        if (pid2 < 0) {
+            fprintf(stderr, "Error creating fork2\n");
+            exit(1);
+        } else if (pid2 > 0) {
+            close(pipe_fd[0]);
+            close(pipe_fd[1]);
+            waitpid(pid2, &status, 0);
+        } else {
+            close(pipe_fd[1]);
+            dup2(pipe_fd[0], 0);
+            close(pipe_fd[0]);
+            execvp(arg2[0], arg2);
+        }
+    } else {
+        close(pipe_fd[0]);
+        dup2(pipe_fd[1], 1);
+        close(pipe_fd[1]);
+        execvp(arg1[0], arg1);
     }
 }
 
 void redirect_command(char *arg1[], char *arg2[], Redirect redirect_type)
 {
     pid_t pid;
-    int pipe_fd[2];
     int fd, direction;
 
-    if (redirect_type == PIPE) {
-        pipe(pipe_fd);
-        pid = fork();
+    if (redirect_type == REDIR_STDOUT) {
+        fd = open(arg2[0], O_WRONLY | O_CREAT | O_TRUNC, 0640);
+        direction = fileno(stdout);
+    } else if (redirect_type == REDIR_STDIN) {
+        fd = open(arg2[0], O_RDONLY);
+        direction = fileno(stdin);
+    } else if (redirect_type == REDIR_STDERR || redirect_type == REDIR_STDOUT_STDERR) {
+        fd = open(arg2[0], O_WRONLY | O_CREAT | O_TRUNC, 0640);
+        direction = fileno(stderr);
+    } else if (redirect_type == APP_STDOUT) {
+        fd = open(arg2[0], O_WRONLY | O_CREAT | O_APPEND, 0640);
+        direction = fileno(stdout);
+    } else if (redirect_type == APP_STDERR) {
+        fd = open(arg2[0], O_WRONLY | O_CREAT | O_APPEND, 0640);
+        direction = fileno(stderr);
+    }
 
-        if (pid < 0) {
-            fprintf(stderr, "Error forking the process\n");
-            exit(1);
-        } else if (pid > 0) { // parent
-            dup2(pipe_fd[WRITE_END], 1);
-            close(pipe_fd[READ_END]);
-            execvp(arg1[0], arg1);
-        } else { // child
-            dup2(pipe_fd[READ_END], 0);
-            close(pipe_fd[WRITE_END]);
-            execvp(arg2[0], arg2);
-        }
-    } else {
+    pid = fork();
 
-        if (redirect_type == REDIR_STDOUT) {
-            fd = open(arg2[0], O_WRONLY | O_CREAT | O_TRUNC, 0640);
-            direction = fileno(stdout);
-        } else if (redirect_type == REDIR_STDIN) {
-            fd = open(arg2[0], O_RDONLY);
-            direction = fileno(stdin);
-        } else if (redirect_type == REDIR_STDERR || redirect_type == REDIR_STDOUT_STDERR) {
-            fd = open(arg2[0], O_WRONLY | O_CREAT | O_TRUNC, 0640);
-            direction = fileno(stderr);
-        } else if (redirect_type == APP_STDOUT) {
-            fd = open(arg2[0], O_WRONLY | O_CREAT | O_APPEND, 0640);
-            direction = fileno(stdout);
-        } else if (redirect_type == APP_STDERR) {
-            fd = open(arg2[0], O_WRONLY | O_CREAT | O_APPEND, 0640);
-            direction = fileno(stderr);
-        }
-
-        pid = fork();
-
-        if (pid < 0) {
-            fprintf(stderr, "Error forking the process\n");
-            exit(1);
-        } else if (pid > 0) { // parent
-            wait(NULL);
-        } else { // child
-            dup2(fd, direction);
-            if (redirect_type == REDIR_STDOUT_STDERR)
-                dup2(fd, fileno(stdout));
-            close(fd);
-            execvp(arg1[0], arg1);
-        }
+    if (pid < 0) {
+        fprintf(stderr, "Error forking the process\n");
+        exit(1);
+    } else if (pid > 0) { // parent
+        wait(NULL);
+    } else { // child
+        dup2(fd, direction);
+        if (redirect_type == REDIR_STDOUT_STDERR)
+            dup2(fd, fileno(stdout));
+        close(fd);
+        execvp(arg1[0], arg1);
     }
 }
 
 void copy_redir_arg(char *redir_arg[], char *arguments_array[], int lower, int upper)
 {
-    int i;
+    int i, j;
     int k = 0;
 
     for (i = lower; i < upper; i++, k++) {
         redir_arg[k] = malloc(MAX_LINE / 2 + 1);
         strcpy(redir_arg[k], arguments_array[i]);
     }
+    /*
+       for (j = 0; j < MAX_LINE / 2 + 1; j++) {
+       redir_arg[j] = NULL;
+       }
+       */
 }
 
 void free_redir_arg(char *redir_arg[], int count)
 {
-    int i;
+    int i, j;
+
+    for (j = 0; j < MAX_LINE / 2 + 1; j++) {
+        redir_arg[j] = NULL;
+    }
 
     for (i = 0; i < count; i++) {
         free(redir_arg[i]);
@@ -234,7 +260,10 @@ int main(int argc, char *argv[])
                 }
 
                 if (redir_flag) {
-                    redirect_command(redir_arg1, redir_arg2, redirect);
+                    if (redirect == PIPE)
+                        pipe_command(redir_arg1, redir_arg2);
+                    else
+                        redirect_command(redir_arg1, redir_arg2, redirect);
                     free_redir_arg(redir_arg1, i);
                     free_redir_arg(redir_arg2, arg_count - i - 1);
                 } else {
